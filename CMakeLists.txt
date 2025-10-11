@@ -90,11 +90,20 @@ endif()
 # ============================================================
 set(STREAM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Stream" CACHE PATH "Path to Stream library")
 
-if(EXISTS "${STREAM_DIR}/CMakeLists.txt")
-    message(STATUS "Found local Stream source at: ${STREAM_DIR}")
-    add_subdirectory(${STREAM_DIR} ${CMAKE_BINARY_DIR}/Stream)
-elseif(NOT TARGET Stream::Shared AND NOT TARGET Stream::Static)
-    find_package(Stream CONFIG REQUIRED)
+if(NOT TARGET Stream::Static AND NOT TARGET Stream::Shared)
+    if(EXISTS "${STREAM_DIR}/CMakeLists.txt")
+        # Use unique binary directory per dependency layer
+        get_filename_component(_abs_stream_dir "${STREAM_DIR}" ABSOLUTE)
+        string(MD5 STREAM_HASH "${_abs_stream_dir}")
+        set(_stream_binary_dir "${CMAKE_BINARY_DIR}/Stream_${STREAM_HASH}")
+        message(STATUS "Including local Stream source at: ${STREAM_DIR}")
+        add_subdirectory(${STREAM_DIR} ${_stream_binary_dir})
+    else()
+        message(STATUS "Using installed Stream library (find_package)")
+        find_package(Stream CONFIG REQUIRED)
+    endif()
+else()
+    message(STATUS "Stream already added — skipping re-addition")
 endif()
 
 if(TARGET Stream::Shared)
@@ -174,25 +183,25 @@ if(${LIB_NAME_UPPER}_BUILD_STATIC_LIB)
 endif()
 
 # ============================================================
-# === Optional dependency: Log (header-only) ===
+# === Dependency: Log library (local or installed) ===
 # ============================================================
 set(${LIB_NAME_UPPER}_LIB_LOG FALSE)
-set(LOG_LOCAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../Log")
+set(LOG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Log" CACHE PATH "Path to Log library")
 
-# Find installed Log package
-find_package(Log QUIET)
-
-if(TARGET Log::HeaderOnly)
-    message(STATUS "Using installed Log header-only library")
-    set(${LIB_NAME_UPPER}_LIB_LOG TRUE)
-elseif(EXISTS "${LOG_LOCAL_PATH}/CMakeLists.txt")
-    message(STATUS "Found local Log source at: ${LOG_LOCAL_PATH}")
-    add_subdirectory(${LOG_LOCAL_PATH} ${CMAKE_BINARY_DIR}/Log)
-    if(TARGET Log::HeaderOnly)
-        set(${LIB_NAME_UPPER}_LIB_LOG TRUE)
+if(NOT TARGET Log::Static AND NOT TARGET Log::Shared)
+    if(EXISTS "${LOG_DIR}/CMakeLists.txt")
+        # Use unique binary directory per dependency layer
+        get_filename_component(_abs_stream_dir "${LOG_DIR}" ABSOLUTE)
+        string(MD5 LOG_HASH "${_abs_stream_dir}")
+        set(_stream_binary_dir "${CMAKE_BINARY_DIR}/Log_${LOG_HASH}")
+        message(STATUS "Including local Log source at: ${LOG_DIR}")
+        add_subdirectory(${LOG_DIR} ${_stream_binary_dir})
+    else()
+        message(STATUS "Using installed Log library (find_package)")
+        find_package(Log CONFIG REQUIRED)
     endif()
 else()
-    message(STATUS "No Log library found — building without logging")
+    message(STATUS "Log already added — skipping re-addition")
 endif()
 
 # Link Log to library targets if available
