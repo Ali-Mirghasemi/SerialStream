@@ -14,14 +14,11 @@ extern "C" {
 struct __SerialStream;
 typedef struct __SerialStream SerialStream;
 
-typedef void (*SerialStream_OnDataReceivedFn)(SerialStream* stream);
-
 struct __SerialStream {
     void*                           Args;
     int                             Context;        // File descriptor for serial port
     StreamIn                        Input;          // Input stream
     StreamOut                       Output;         // Output stream
-    SerialStream_OnDataReceivedFn   onDataReceived; // Callback for data received
     pthread_t                       PollThread;     // Thread for polling data
 };
 

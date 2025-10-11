@@ -1,5 +1,4 @@
 #include "SerialStream.h"
-#include "Log.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
@@ -8,12 +7,19 @@
 #include <sys/ioctl.h>
 #include <stdio.h>
 
+#if SERIALSTREAM_LIB_LOG
+    #include "Log.h"
+#else
+    #define  logInfo(...)
+    #define  logError(...)
+#endif
+
 
 // Internal functions
 // Handle errors (call from event loop)
 static void SerialStream_errorHandle(SerialStream* stream);
 // Poll for serial events (non-blocking)
-static Stream_Result SerialStream_transmit(OStream* stream, uint8_t* buff, Stream_LenType len);
+static Stream_Result SerialStream_transmit(StreamOut* stream, uint8_t* buff, Stream_LenType len);
 
 static void* SerialStream_pollThread(void* arg);
 
@@ -123,12 +129,10 @@ uint8_t SerialStream_init(
 
     // Initialize streams
     IStream_init(&stream->Input, NULL, rxBuff, rxBuffSize);
-    IStream_setArgs(&stream->Input, stream);
+    IStream_setDriverArgs(&stream->Input, stream);
 
     OStream_init(&stream->Output, SerialStream_transmit, txBuff, txBuffSize);
-    OStream_setArgs(&stream->Output, stream);
-
-    stream->onDataReceived = NULL; // No callback set by default
+    OStream_setDriverArgs(&stream->Output, stream);
 
     __initMutex(stream);
     // Start the polling thread
@@ -166,8 +170,8 @@ static void SerialStream_errorHandle(SerialStream* stream) {
     IStream_receive(&stream->Input); // Restart reception
 }
 
-static Stream_Result SerialStream_transmit(OStream* stream, uint8_t* buff, Stream_LenType len) {
-    SerialStream* serial = (SerialStream*) OStream_getArgs(stream);
+static Stream_Result SerialStream_transmit(StreamOut* stream, uint8_t* buff, Stream_LenType len) {
+    SerialStream* serial = (SerialStream*) OStream_getDriverArgs(stream);
     if(serial->Context < 0) {
         return Stream_NoTransmit; // Serial port not open
     }
@@ -201,8 +205,8 @@ static void* SerialStream_pollThread(void* arg) {
         if(ret > 0) {
             if(fds.revents & POLLIN) {
                 __lockMutex(&stream->Input);
-                uint8_t* buf = Stream_getWritePtr(&stream->Input.Buffer);
-                Stream_LenType len = Stream_directSpace(&stream->Input.Buffer);
+                uint8_t* buf = IStream_getDataPtr(&stream->Input);
+                Stream_LenType len = IStream_directSpace(&stream->Input);
 
                 int read_bytes = read(stream->Context, buf, len);
                 __unlockMutex(&stream->Input);
@@ -214,11 +218,7 @@ static void* SerialStream_pollThread(void* arg) {
                     }
                 } 
                 else if(read_bytes > 0) {
-                    Stream_moveWritePos(&stream->Input.Buffer, read_bytes);
-                    // Call the receive function
-                    if (stream->onDataReceived) {
-                        stream->onDataReceived(stream);
-                    }
+                    IStream_handle(&stream->Input, read_bytes);
                 }
                 else {
                     // Stream closed
