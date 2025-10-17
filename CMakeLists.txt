@@ -86,33 +86,60 @@ if(LIB_COUNT EQUAL 0)
 endif()
 
 # ============================================================
-# === Dependency: Stream library (local or installed) ===
+# === Function: include_dependency(NAME DIR [HEADER_ONLY]) ===
 # ============================================================
-set(STREAM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Stream" CACHE PATH "Path to Stream library")
+function(include_dependency DEP_NAME DEP_DIR OUT_VAR)
+    # Example:
+    #   include_dependency(Stream "${CMAKE_CURRENT_SOURCE_DIR}/../Stream" STREAM_LIB)
 
-if(NOT TARGET Stream::Static AND NOT TARGET Stream::Shared)
-    if(EXISTS "${STREAM_DIR}/CMakeLists.txt")
-        # Use unique binary directory per dependency layer
-        get_filename_component(_abs_stream_dir "${STREAM_DIR}" ABSOLUTE)
-        string(MD5 STREAM_HASH "${_abs_stream_dir}")
-        set(_stream_binary_dir "${CMAKE_BINARY_DIR}/Stream_${STREAM_HASH}")
-        message(STATUS "Including local Stream source at: ${STREAM_DIR}")
-        add_subdirectory(${STREAM_DIR} ${_stream_binary_dir})
+    # Normalize and store path in cache (overwrite if necessary)
+    get_filename_component(_abs_dir "${DEP_DIR}" ABSOLUTE)
+    set(${DEP_NAME}_DIR "${_abs_dir}" CACHE PATH "Path to ${DEP_NAME} library" FORCE)
+
+    set(_target_static "${DEP_NAME}::Static")
+    set(_target_shared "${DEP_NAME}::Shared")
+    set(_target_header "${DEP_NAME}::HeaderOnly")
+
+    # Check if target already exists
+    if(TARGET ${_target_static} OR TARGET ${_target_shared} OR TARGET ${_target_header})
+        message(STATUS "${DEP_NAME} already added — skipping re-addition")
     else()
-        message(STATUS "Using installed Stream library (find_package)")
-        find_package(Stream CONFIG REQUIRED)
-    endif()
-else()
-    message(STATUS "Stream already added — skipping re-addition")
-endif()
+        # Try installed package first
+        find_package(${DEP_NAME} QUIET CONFIG)
 
-if(TARGET Stream::Shared)
-    set(STREAM_LIB Stream::Shared)
-elseif(TARGET Stream::Static)
-    set(STREAM_LIB Stream::Static)
-else()
-    message(FATAL_ERROR "No Stream library target found! Make sure Stream is available.")
-endif()
+        if(TARGET ${_target_static} OR TARGET ${_target_shared} OR TARGET ${_target_header})
+            message(STATUS "Using installed ${DEP_NAME} library")
+        elseif(EXISTS "${_abs_dir}/CMakeLists.txt")
+            # Unique binary dir to avoid conflicts
+            string(MD5 _hash "${_abs_dir}")
+            set(_binary_dir "${CMAKE_BINARY_DIR}/${DEP_NAME}_${_hash}")
+
+            message(STATUS "Including local ${DEP_NAME} source at: ${_abs_dir}")
+            add_subdirectory(${_abs_dir} ${_binary_dir})
+        else()
+            message(WARNING "No ${DEP_NAME} library found — skipping (${_abs_dir}/CMakeLists.txt not found)")
+        endif()
+    endif()
+
+    # Determine which target to use
+    if(TARGET ${_target_shared})
+        set(${OUT_VAR} ${_target_shared} PARENT_SCOPE)
+        set(${DEP_NAME}_FOUND TRUE PARENT_SCOPE)
+    elseif(TARGET ${_target_static})
+        set(${OUT_VAR} ${_target_static} PARENT_SCOPE)
+        set(${DEP_NAME}_FOUND TRUE PARENT_SCOPE)
+    elseif(TARGET ${_target_header})
+        set(${OUT_VAR} ${_target_header} PARENT_SCOPE)
+        set(${DEP_NAME}_FOUND TRUE PARENT_SCOPE)
+    else()
+        message(WARNING "No ${DEP_NAME} target available after inclusion")
+        set(${OUT_VAR} "" PARENT_SCOPE)
+        set(${DEP_NAME}_FOUND FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
+include_dependency(Stream       "${CMAKE_CURRENT_SOURCE_DIR}/../Stream"       STREAM_LIB)
+include_dependency(Log          "${CMAKE_CURRENT_SOURCE_DIR}/../Log"          LOG_LIB)
 
 # ============================================================
 # === Create Library Targets ===
@@ -134,6 +161,7 @@ if(${LIB_NAME_UPPER}_BUILD_SHARED_LIB)
     target_compile_features(${SHARED_TARGET} PUBLIC c_std_99)
     target_compile_definitions(${SHARED_TARGET} PRIVATE ${LIB_NAME_UPPER}_EXPORTS)
     target_link_libraries(${SHARED_TARGET} PUBLIC ${STREAM_LIB})
+    target_link_libraries(${SHARED_TARGET} PUBLIC ${LOG_LIB})
 
     set_target_properties(${SHARED_TARGET} PROPERTIES
         PUBLIC_HEADER "${LIBRARY_HEADERS}"
@@ -169,6 +197,7 @@ if(${LIB_NAME_UPPER}_BUILD_STATIC_LIB)
     )
     target_compile_features(${STATIC_TARGET} PUBLIC c_std_99)
     target_link_libraries(${STATIC_TARGET} PUBLIC ${STREAM_LIB})
+    target_link_libraries(${STATIC_TARGET} PUBLIC ${LOG_LIB})
 
     set_target_properties(${STATIC_TARGET} PROPERTIES
         PUBLIC_HEADER "${LIBRARY_HEADERS}"
@@ -180,40 +209,6 @@ if(${LIB_NAME_UPPER}_BUILD_STATIC_LIB)
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin
     )
-endif()
-
-# ============================================================
-# === Dependency: Log library (local or installed) ===
-# ============================================================
-set(${LIB_NAME_UPPER}_LIB_LOG FALSE)
-set(LOG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Log" CACHE PATH "Path to Log library")
-
-if(NOT TARGET Log::Static AND NOT TARGET Log::Shared)
-    if(EXISTS "${LOG_DIR}/CMakeLists.txt")
-        # Use unique binary directory per dependency layer
-        get_filename_component(_abs_stream_dir "${LOG_DIR}" ABSOLUTE)
-        string(MD5 LOG_HASH "${_abs_stream_dir}")
-        set(_stream_binary_dir "${CMAKE_BINARY_DIR}/Log_${LOG_HASH}")
-        message(STATUS "Including local Log source at: ${LOG_DIR}")
-        add_subdirectory(${LOG_DIR} ${_stream_binary_dir})
-    else()
-        message(STATUS "Using installed Log library (find_package)")
-        find_package(Log CONFIG REQUIRED)
-    endif()
-else()
-    message(STATUS "Log already added — skipping re-addition")
-endif()
-
-# Link Log to library targets if available
-if(${LIB_NAME_UPPER}_LIB_LOG)
-    if(TARGET ${STATIC_TARGET})
-        target_link_libraries(${STATIC_TARGET} PRIVATE Log::HeaderOnly)
-        target_compile_definitions(${STATIC_TARGET} PRIVATE ${LIB_NAME_UPPER}_LIB_LOG)
-    endif()
-    if(TARGET ${SHARED_TARGET})
-        target_link_libraries(${SHARED_TARGET} PRIVATE Log::HeaderOnly)
-        target_compile_definitions(${SHARED_TARGET} PRIVATE ${LIB_NAME_UPPER}_LIB_LOG)
-    endif()
 endif()
 
 # ============================================================
