@@ -7,19 +7,31 @@ extern "C" {
 
 #include "InputStream.h"
 #include "OutputStream.h"
-#include <termios.h>
-#include <pthread.h>
+
 #include <stdint.h>
+
+#if defined(_WIN32) || defined(_WIN64)
+    #include <windows.h>
+#else
+    #include <termios.h>
+    #include <pthread.h>
+#endif
 
 struct __SerialStream;
 typedef struct __SerialStream SerialStream;
 
 struct __SerialStream {
     void*                           Args;
-    int                             Context;        // File descriptor for serial port
     StreamIn                        Input;          // Input stream
     StreamOut                       Output;         // Output stream
-    pthread_t                       PollThread;     // Thread for polling data
+    intptr_t                        Context;        // File descriptor (POSIX) or HANDLE cast to intptr_t (Win32)
+
+#if defined(_WIN32) || defined(_WIN64)
+    HANDLE                          PollThread;     // Thread handle (Win32)
+    HANDLE                          StopEvent;      // Event to signal thread stop
+#else
+    pthread_t                       PollThread;     // Thread for polling data (POSIX)
+#endif
 };
 
 // Initialize serial stream
