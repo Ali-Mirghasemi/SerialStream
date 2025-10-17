@@ -183,10 +183,12 @@ static Stream_Result SerialStream_transmit(StreamOut* stream, uint8_t* buff, Str
         }
     } 
     else if(write_bytes > 0) {
-        OStream_handle(stream, write_bytes);
+        stream->Buffer.InTransmit = 1;
+        return OStream_handle(stream, write_bytes);
     }
-
-    return Stream_Ok; // Successfully transmitted
+    else {
+        return Stream_Ok; // Successfully transmitted
+    }
 }
 
 static void* SerialStream_pollThread(void* arg) {
@@ -218,6 +220,8 @@ static void* SerialStream_pollThread(void* arg) {
                     }
                 } 
                 else if(read_bytes > 0) {
+                    stream->Input.Buffer.InReceive = 1;
+                    stream->Input.Buffer.PendingBytes = read_bytes;
                     IStream_handle(&stream->Input, read_bytes);
                 }
                 else {
